@@ -34,4 +34,8 @@ e = c - d
 f = e**2
 g = f / 2.0
 g += 10.0 / f
-print("karpathy fwd pass: | Passed == ", round(g.data, 4) == 24.7041) # prints 24.7041, the outcome of this forward pass
+print("karpathy fwd pass:  | Passed == ", round(g.data, 4) == 24.7041) # prints 24.7041, the outcome of this forward pass
+
+g.backward()
+print("karpathy bckpass 1: | Passed == ", round(a.grad, 4) == 138.8338) # prints 138.8338, i.e. the numerical value of dg/da
+print("karpathy bckpass 2: | Passed == ", round(b.grad, 4) == 645.5773) # # prints 645.5773, i.e. the numerical value of dg/db
