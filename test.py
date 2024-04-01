@@ -192,13 +192,13 @@ def loss(X, y, model, batch_size=None):
     data_loss = sum(losses) * (1.0 / len(losses)) #cost = average loss
     # L2 regularization
     alpha = 1e-4
-    reg_loss = alpha * sum((p*p for p in model.parameters()))
+    reg_loss = alpha * sum((p.data**2 for p in model.parameters())) #p.data to avoid involving p.grad
     total_loss = data_loss + reg_loss
     
     # also get accuracy
     #accuracy = [(yi.item()) == (np.argmax(scorei[yi.item()]).item()) for (yi, scorei) in zip(yb, scores)] 
     #return total_loss, sum(accuracy) / len(accuracy)
-    return data_loss, 1 #TODO: fix accruacy and use total_loss (total_loss causes max recursion depth error for get_child?)
+    return total_loss, 1 #TODO: fix accruacy and use total_loss (total_loss causes max recursion depth error for get_child?)
 
 def kaggle_training():
     X = np.empty((42000, 28*28), dtype = int)
@@ -211,6 +211,7 @@ def kaggle_training():
                 X[digitreader.line_num-2] = [int(char) for char in row[1:]]
 
     # initialize a model 
+    #model = MLP(28*28, [25, 15, 10])
     model = MLP(28*28, [25, 15, 10])
     print()
     print(model)
@@ -219,18 +220,20 @@ def kaggle_training():
     print()
 
     # optimization
-    for k in range(24):
+    k_range = 24
+    for k in range(k_range):
         
         # forward
         #total_loss, acc = loss(X, y, model, batch_size = 32)
-        total_loss, acc = loss(X, y, model, batch_size = 8)
+        total_loss, acc = loss(X, y, model, batch_size = 16)
         
         # backward
         model.zero_grad()
         total_loss.backward()
         
         # update (sgd)
-        learning_rate = 1.0 - 0.9*k/100
+        #learning_rate = 1.0 - 0.9*k/100
+        learning_rate = 0.1 - 0.09*k/k_range #test
         for p in model.parameters():
             p.data -= learning_rate * p.grad
         
