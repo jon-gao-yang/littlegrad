@@ -1,17 +1,20 @@
-import numpy as np
+import math
 
 class Value:
     """ stores a single scalar value and its gradient """
 
     def __init__(self, data, children = (), _op = ''):
         self.data = data
-        self.children = children
+        self.children = set(children) #forgetting the set() causes gradient descent to break (maybe because without set children would be tuple which would make .grad unchangable?)
         self.grad = 0
         self._backward = lambda: None
         self._op = _op #for jupyter notebook testing (draw_dot())
 
     def data(self):
         return self.data
+    
+    def __repr__(self):
+        return f"Value({self.data}, grad={self.grad})" #f-string
     
     def __add__(self, other):
         other = other if (type(other) == Value) else Value(other)
@@ -41,7 +44,7 @@ class Value:
 
         def _backward():
             self.grad += (other.data * (self.data ** (other.data - 1))) * out.grad
-            other.grad += (self.data ** other.data) * np.log(abs(self.data)) * out.grad #assumes base is positive (otherwise function would be complex)
+            other.grad += (self.data ** other.data) * math.log(abs(self.data)) * out.grad #assumes base is positive (otherwise function would be complex)
 
         out._backward = _backward
         return out
@@ -67,7 +70,7 @@ class Value:
 
         def _backward():
             other.grad += (self.data * (other.data ** (self.data - 1))) * out.grad
-            self.grad += (other.data ** self.data) * np.log(abs(other.data)) * out.grad #assumes base is positive (otherwise function would be complex)
+            self.grad += (other.data ** self.data) * math.log(abs(other.data)) * out.grad #assumes base is positive (otherwise function would be complex)
 
         out._backward = _backward
         return out
@@ -77,6 +80,18 @@ class Value:
     
     def __rtruediv__(self, other):
         return other * (self ** -1)
+    
+    def exp(self):
+        return math.e**self
+    
+    def log(self):
+        out = Value(math.log(self.data), (self,), 'log()')
+
+        def _backward():
+            self.grad += (self.data ** -1) * out.grad
+            out._backward = _backward
+
+        return out
     
     def relu(self):
         out = Value(max([self.data, 0]), children = (self,), _op = "ReLU")
@@ -89,11 +104,13 @@ class Value:
     
     def backward(self):
         nodeList = []
+        visited = set() #searching set is way faster than searching array for some reason
         def getNodes(val):
-            if val not in nodeList:
+            if val not in visited:
                 for child in val.children:
                     getNodes(child)
                 nodeList.append(val)
+                visited.add(val)
         getNodes(self)
 
         self.grad = 1.0
