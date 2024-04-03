@@ -139,8 +139,7 @@ def plot_kaggle_data(X, y, model, predict=False):
         # Select random indices
         random_index = np.random.randint(m)
         
-        # Select rows corresponding to the random indices and
-        # reshape the image
+        # Select rows corresponding to the random indices and reshape the image
         X_random_reshaped = X[random_index].reshape((28,28))
         
         # Display the image
@@ -149,14 +148,10 @@ def plot_kaggle_data(X, y, model, predict=False):
         yhat = None
         # Predict using the Neural Network
         if predict:
-            
             inputs = [list(map(Value, X[random_index]))] # pick random image and convert pixel ints to Value, 
-            prediction = list(map(model, inputs))[0]        # then plug pixel Values into model for fwd pass ([0] because list(map) returns a list of lists which breaks softmax)             
-            prediction_p = softmax(prediction)
-            #print()
-            #print('PREDICTION_P', prediction_p)
-            yhat = np.argmax([prediction.data for prediction in prediction_p]) #TODO: fix this? (add max/argmax to Value class?)
-            #print('YHAT:', yhat)        
+            outputs = list(map(model, inputs))[0]        # then plug pixel Values into model for fwd pass ([0] because list(map) returns a list of lists which breaks softmax)             
+            probs = softmax(outputs)
+            yhat = np.argmax([prob.data for prob in probs])
         
         # Display the label above the image
         ax.set_title(f"{int(y[random_index])},{yhat}",fontsize=10)
@@ -166,41 +161,32 @@ def plot_kaggle_data(X, y, model, predict=False):
 
 #from karpathy's micrograd_exercises.ipynb
 def softmax(logits):
-  #print('LOGITS:', logits)
-  #counts = [logit.exp() for logit in logits]
-  counts = [(logit/1000).exp() for logit in logits] #TODO: fix this?
+  counts = [logit.exp() for logit in logits]
   denominator = sum(counts)
   out = [c / denominator for c in counts]
-  #print('SOFTMAX:', out)
   return out
 
 #modified from karpathy's demo.ipynb
-def loss(X, y, model, batch_size=None):
-    
-    # inline DataLoader :)
-    if batch_size is None:
+def loss(X, y, model, batch_size):
+
+    if batch_size is None:  #dataloader
         Xb, yb = X, y
     else:
         ri = np.random.permutation(X.shape[0])[:batch_size]
         Xb, yb = X[ri], y[ri]
-    inputs = [list(map(Value, xrow)) for xrow in Xb]
-    # forward the model to get scores
-    scores = list(map(model, inputs))
-    # negative log likelihood loss
-    losses = [-softmax(scorei)[yi.item()].log() for (yi,scorei) in zip(yb, scores)] #can't take softmax of a list of lists
-    #print("LOSSES:", losses)
-    data_loss = sum(losses) * (1.0 / len(losses)) #cost = average loss
-    # L2 regularization
-    alpha = 1e-4
-    reg_loss = alpha * sum((p.data**2 for p in model.parameters())) #p.data to avoid involving p.grad
-    total_loss = data_loss + reg_loss
-    
-    # also get accuracy
-    #accuracy = [(yi.item()) == (np.argmax(scorei[yi.item()]).item()) for (yi, scorei) in zip(yb, scores)] 
-    #return total_loss, sum(accuracy) / len(accuracy)
-    return total_loss, 1 #TODO: fix accruacy and use total_loss (total_loss causes max recursion depth error for get_child?)
 
-def kaggle_training():
+    losses, accuracy = [], []
+    for (xrow, yrow) in zip(Xb, yb):
+        inputs = list(map(Value, xrow))  #Value(xrow[i])
+        outputs = model(inputs)  #forward pass
+        probs = softmax(outputs)  #softmax layer
+        losses.append(-probs[yrow].log())  #negative log likelyhood loss
+        accuracy.append(yrow == np.argmax([prob.data for prob in probs])) #check if it would have guessed correctly
+    total_loss = sum(losses) / len(losses) #cost = average loss
+
+    return total_loss, sum(accuracy) / len(accuracy) #TODO: fix accruacy and use total_loss (total_loss causes max recursion depth error for get_child?)
+
+def kaggle_training(epochs = 10, batch_size = None):
     X = np.empty((42000, 28*28), dtype = int)
     y = np.empty(42000, dtype = int)
     with open('digit-recognizer/train.csv', newline='\n') as csvfile:
@@ -209,31 +195,25 @@ def kaggle_training():
             if digitreader.line_num != 1: #line_num starts at 1, not 0
                 y[digitreader.line_num-2] = int(row[0])
                 X[digitreader.line_num-2] = [int(char) for char in row[1:]]
+    
+    X = (X-np.average(X)) / np.std(X)  #data normalization
 
     # initialize a model 
-    #model = MLP(28*28, [25, 15, 10])
     model = MLP(28*28, [25, 15, 10])
-    print()
-    print(model)
-    print()
-    print("NUMBER OF PARAMTERS:", len(model.parameters()))
-    print()
+    print(model, "\n", "NUMBER OF PARAMTERS:", len(model.parameters()), "\n")
 
     # optimization
-    k_range = 24
-    for k in range(k_range):
+    for k in range(epochs):
         
         # forward
-        #total_loss, acc = loss(X, y, model, batch_size = 32)
-        total_loss, acc = loss(X, y, model, batch_size = 16)
+        total_loss, acc = loss(X, y, model, batch_size = batch_size)
         
         # backward
         model.zero_grad()
         total_loss.backward()
         
         # update (sgd)
-        #learning_rate = 1.0 - 0.9*k/100
-        learning_rate = 0.1 - 0.09*k/k_range #test
+        learning_rate = 1 - 0.999*k/epochs
         for p in model.parameters():
             p.data -= learning_rate * p.grad
         
@@ -249,4 +229,4 @@ def kaggle_training():
 #test_more_ops()
 #mlp_test()
     
-kaggle_training()
+kaggle_training(epochs = 24, batch_size = 10)
