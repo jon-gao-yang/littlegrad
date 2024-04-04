@@ -159,6 +159,24 @@ def plot_kaggle_data(X, y, model, predict=False):
     fig.suptitle("Label, yhat", fontsize=14)
     plt.show()
 
+def write_kaggle_submission(model):
+    X = np.empty((28000, 28*28), dtype = int)
+    with open('digit-recognizer/test.csv', newline='\n') as csvfile:
+        digitreader = csv.reader(csvfile, delimiter=',')
+        for row in digitreader:
+            if digitreader.line_num != 1: #line_num starts at 1, not 0
+                X[digitreader.line_num-2] = [int(char) for char in row[1:]]
+    
+    X = (X-np.average(X)) / np.std(X)  #data normalization
+    with open('digit-recognizer/submission.csv', newline='\n') as csvfile:
+        digitwriter = csv.writer(csvfile, delimiter=',')
+        digitwriter.writerow("ImageId","Label")
+        for i in range(X.shape[0]):
+            inputs = list(map(Value, X[i]))  #Value(X[i])
+            outputs = model(inputs)  #forward pass
+            probs = softmax(outputs)  #softmax layer
+            digitwriter.writerow([i+1, np.argmax(probs)])  #take most likely digit as guess
+
 #from karpathy's micrograd_exercises.ipynb
 def softmax(logits):
   counts = [(logit-np.max(logits)).exp() for logit in logits] #subtracting by max to avoid overflow(rounding to inf) or underflow(rounding to 0) errors
@@ -213,21 +231,25 @@ def kaggle_training(epochs = 10, batch_size = None):
     for k in range(epochs):
         
         # forward
-        total_loss, acc = loss(X[:100], y[:100], model, batch_size = batch_size) #TODO: CHANGE THIS
+        total_loss, acc = loss(X, y, model, batch_size = batch_size)
 
         # backward
         model.zero_grad()
         total_loss.backward()
         
         # update (sgd)
-        learning_rate = 0.1 - 0.099*k/epochs
+        learning_rate = 0.1 - 0.0999*k/epochs
         for p in model.parameters():
             p.data -= learning_rate * p.grad
         
         if k % 1 == 0:
             print(f"step {k} loss {total_loss.data}, accuracy {acc*100}%")
 
-    plot_kaggle_data(X[:100], y[:100], model, predict = True) #TODO: CHANGE THIS
+    print('TRAINING COMPLETE')
+    plot_kaggle_data(X, y, model, predict = True)
+    print('BEGINNING TEST SET INFERENCE')
+    write_kaggle_submission(model)
+    print('TEST SET INFERENCE COMPLETE')
 
 #############################################################################################
 
