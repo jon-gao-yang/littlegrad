@@ -151,7 +151,7 @@ def plot_kaggle_data(X, y, model, predict=False):
             inputs = [list(map(Value, X[random_index]))] # pick random image and convert pixel ints to Value, 
             outputs = list(map(model, inputs))[0]        # then plug pixel Values into model for fwd pass ([0] because list(map) returns a list of lists which breaks softmax)             
             probs = softmax(outputs)
-            yhat = np.argmax([prob.data for prob in probs])
+            yhat = np.argmax(probs)
         
         # Display the label above the image
         ax.set_title(f"{int(y[random_index])},{yhat}",fontsize=10)
@@ -161,7 +161,7 @@ def plot_kaggle_data(X, y, model, predict=False):
 
 #from karpathy's micrograd_exercises.ipynb
 def softmax(logits):
-  counts = [logit.exp() for logit in logits]
+  counts = [(logit-np.max(logits)).exp() for logit in logits] #subtracting by max to avoid overflow(rounding to inf) or underflow(rounding to 0) errors
   denominator = sum(counts)
   out = [c / denominator for c in counts]
   return out
@@ -172,7 +172,7 @@ def loss(X, y, model, batch_size):
     if batch_size is None:  #dataloader
         Xb, yb = X, y
     else:
-        ri = np.random.permutation(X.shape[0])[:batch_size]
+        ri = np.random.permutation(X.shape[0])[:batch_size] #shuffles the X indexes and returns the first 10
         Xb, yb = X[ri], y[ri]
 
     losses, accuracy = [], []
@@ -181,10 +181,17 @@ def loss(X, y, model, batch_size):
         outputs = model(inputs)  #forward pass
         probs = softmax(outputs)  #softmax layer
         losses.append(-probs[yrow].log())  #negative log likelyhood loss
-        accuracy.append(yrow == np.argmax([prob.data for prob in probs])) #check if it would have guessed correctly
-    total_loss = sum(losses) / len(losses) #cost = average loss
+        accuracy.append(yrow == np.argmax(probs)) #check if it would have guessed correctly
+    data_loss = sum(losses) / len(losses) #cost = average loss
 
-    return total_loss, sum(accuracy) / len(accuracy) #TODO: fix accruacy and use total_loss (total_loss causes max recursion depth error for get_child?)
+    # Janky L2 regularization 
+    # (adding the normal l2 exceeded recursion depth for backward() topo sort, 
+    #  so I used p.data instead. this meant that I had to multiply it into total_loss, otherwise p.grad would ignore this new l2
+    alpha = 1e-4
+    reg_loss = alpha * sum((p.data**2 for p in model.parameters())) / data_loss
+    total_loss = data_loss * (1 + reg_loss)
+
+    return total_loss, sum(accuracy) / len(accuracy)
 
 def kaggle_training(epochs = 10, batch_size = None):
     X = np.empty((42000, 28*28), dtype = int)
@@ -206,21 +213,21 @@ def kaggle_training(epochs = 10, batch_size = None):
     for k in range(epochs):
         
         # forward
-        total_loss, acc = loss(X, y, model, batch_size = batch_size)
-        
+        total_loss, acc = loss(X[:100], y[:100], model, batch_size = batch_size) #TODO: CHANGE THIS
+
         # backward
         model.zero_grad()
         total_loss.backward()
         
         # update (sgd)
-        learning_rate = 1 - 0.999*k/epochs
+        learning_rate = 0.1 - 0.099*k/epochs
         for p in model.parameters():
             p.data -= learning_rate * p.grad
         
         if k % 1 == 0:
             print(f"step {k} loss {total_loss.data}, accuracy {acc*100}%")
 
-    plot_kaggle_data(X, y, model, predict = True)
+    plot_kaggle_data(X[:100], y[:100], model, predict = True) #TODO: CHANGE THIS
 
 #############################################################################################
 
@@ -229,4 +236,4 @@ def kaggle_training(epochs = 10, batch_size = None):
 #test_more_ops()
 #mlp_test()
     
-kaggle_training(epochs = 24, batch_size = 10)
+kaggle_training(epochs = 24, batch_size = 32)

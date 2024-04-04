@@ -81,23 +81,39 @@ class Value:
     def __rtruediv__(self, other):
         return other * (self ** -1)
     
+    def __lt__(self, other):
+        other = other if (type(other) == Value) else Value(other)
+        return self.data < other.data
+    def __le__(self, other):
+        other = other if (type(other) == Value) else Value(other)
+        return self.data <= other.data
+    def __gt__(self, other):
+        other = other if (type(other) == Value) else Value(other)
+        return self.data > other.data
+    def __ge__(self, other):
+        other = other if (type(other) == Value) else Value(other)
+        return self.data >= other.data
+    
+    #can't have __eq__ because set() needs that to confirm that Value is hashable value (checks if hashes are identical?)
+    
     def exp(self):
         return math.e**self
     
     def log(self):
-        out = Value(math.log(self.data), (self,), 'log()')
+        if self.data < 1e-100: self.data = 1e-100  #to avoid overflow/underflow errors
+        out = Value(math.log(self.data), children = (self,), _op = 'log()')
 
         def _backward():
-            self.grad += (self.data ** -1) * out.grad
-            out._backward = _backward
-
+            self.grad += out.grad/self.data
+            
+        out._backward = _backward #NOTE: this used to be in the _backward() function and prevented nll loss from running
         return out
     
     def relu(self):
         out = Value(max([self.data, 0]), children = (self,), _op = "ReLU")
 
         def _backward():
-            self.grad += int(self.data > 0) * out.grad
+            self.grad += (out.data > 0) * out.grad
 
         out._backward = _backward
         return out
