@@ -178,7 +178,7 @@ def write_kaggle_submission(model):
             digitwriter.writerow([i+1, np.argmax(probs)])  #take most likely digit as guess
 
 #from karpathy's micrograd_exercises.ipynb
-#subtracting by max to avoid overflow(rounding to inf) or underflow(rounding to 0) errors
+#subtracting by max to avoid overflow (rounding logit.exp() to inf)
 #adding 1 to prevent log(0) due to underflow
 def softmax(logits):
   counts = [(logit-np.max(logits)+1).exp() for logit in logits]
@@ -201,17 +201,10 @@ def loss(X, y, model, batch_size=None):
         inputs = list(map(Value, xrow))  #Value(xrow[i])
         outputs = model(inputs)  #forward pass
         probs, log_softmax = softmax(outputs)
-        #losses.append((-log_softmax[yrow]))  #cross entropy loss
-        losses.append(-sum([log_softmax[index] * int(index == yrow) for index in range(len(log_softmax))]))
+        losses.append(-sum([log_softmax[index] * int(index == yrow) for index in range(len(log_softmax))])) 
+        # ^ cross entropy loss (can't just take log_softmax[yrow] or else you lose track of gradients and backward() doesn't work)
         accuracy.append(yrow == np.argmax(probs))
-    data_loss = sum(losses) / len(losses)
-    # Janky L2 regularization 
-    # (adding the normal l2 exceeded recursion depth for backward() topo sort, 
-    #  so I used p.data instead. this meant that I had to multiply it into total_loss, otherwise p.grad would ignore this new l2
-    #alpha = 1e-4
-    #reg_loss = alpha * sum((p.data**2 for p in model.parameters())) / data_loss
-    total_loss = data_loss #* (1 + reg_loss)
-
+    total_loss = sum(losses) / len(losses)
     return total_loss, sum(accuracy) / len(accuracy)
 
 def kaggle_training(epochs = 10, batch_size = None):
@@ -230,29 +223,33 @@ def kaggle_training(epochs = 10, batch_size = None):
     model = MLP(28*28, [25, 15, 10])
     print(model, "\n", "NUMBER OF PARAMTERS:", len(model.parameters()), "\n")
 
-    # optimization
-    for k in range(epochs):
-        
-        # forward
-        total_loss, acc = loss(X[:100], y[:100], model, batch_size = batch_size)
+    #index_list = [batch_size*3]
+    index_list = [100]
+    for index in index_list:
+        # optimization
+        for k in range(epochs):
+            
+            # forward
+            total_loss, acc = loss(X[:index], y[:index], model, batch_size = batch_size)
 
-        # backward
-        model.zero_grad()
-        total_loss.backward()
-        
-        # update (sgd)
-        #learning_rate = 0.1 - 0.0999*k/epochs
-        learning_rate = 0.01
-        for p in model.parameters():
-            #p.momentum = 0.1*p.grad + 0.9*p.momentum  #testing
-            #p.data -= learning_rate * p.momentum  #testing
-            p.data -= learning_rate * p.grad
-        
-        if k % 1 == 0:
-            print(f"step {k} loss {total_loss.data}, accuracy {acc*100}%")
+            # backward
+            model.zero_grad()
+            total_loss.backward()
+            
+            # update (sgd)
+            #learning_rate = 0.1 - 0.0999*k/epochs
+            learning_rate = 0.01
+            for p in model.parameters():
+                p.data -= learning_rate * p.grad
+            
+            if k % 1 == 0:
+                print(f"step {k} loss {total_loss.data}, accuracy {acc*100}%")
+
+        if index != X.shape[0]:
+            index_list.append(index*2 if index*2 < X.shape[0] else X.shape[0])
 
     print('TRAINING COMPLETE')
-    plot_kaggle_data(X[:100], y[:100], model, predict = True)
+    plot_kaggle_data(X, y, model, predict = True)
     #print('BEGINNING TEST SET INFERENCE')
     #write_kaggle_submission(model)
     #print('TEST SET INFERENCE COMPLETE')
