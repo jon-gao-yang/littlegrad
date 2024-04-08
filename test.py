@@ -150,7 +150,7 @@ def plot_kaggle_data(X, y, model, predict=False):
         if predict:
             inputs = [list(map(Value, X[random_index]))] # pick random image and convert pixel ints to Value, 
             outputs = list(map(model, inputs))[0]        # then plug pixel Values into model for fwd pass ([0] because list(map) returns a list of lists which breaks softmax)             
-            probs = softmax(outputs)
+            probs, log_softmax = softmax(outputs)
             yhat = np.argmax(probs)
         
         # Display the label above the image
@@ -165,7 +165,7 @@ def write_kaggle_submission(model):
         digitreader = csv.reader(csvfile, delimiter=',')
         for row in digitreader:
             if digitreader.line_num != 1: #line_num starts at 1, not 0
-                X[digitreader.line_num-2] = [int(char) for char in row[1:]]
+                X[digitreader.line_num-2] = [int(char) for char in row] #no labels so entire row is pixel data
     
     X = (X-np.average(X)) / np.std(X)  #data normalization
     with open('digit-recognizer/submission.csv', newline='\n') as csvfile:
@@ -174,18 +174,21 @@ def write_kaggle_submission(model):
         for i in range(X.shape[0]):
             inputs = list(map(Value, X[i]))  #Value(X[i])
             outputs = model(inputs)  #forward pass
-            probs = softmax(outputs)  #softmax layer
+            probs, log_softmax = softmax(outputs)  #softmax layer
             digitwriter.writerow([i+1, np.argmax(probs)])  #take most likely digit as guess
 
 #from karpathy's micrograd_exercises.ipynb
+#subtracting by max to avoid overflow(rounding to inf) or underflow(rounding to 0) errors
+#adding 1 to prevent log(0) due to underflow
 def softmax(logits):
-  counts = [(logit-np.max(logits)).exp() for logit in logits] #subtracting by max to avoid overflow(rounding to inf) or underflow(rounding to 0) errors
-  denominator = sum(counts)
-  out = [c / denominator for c in counts]
-  return out
+  counts = [(logit-np.max(logits)+1).exp() for logit in logits]
+  #denominator = sum(counts)
+  probs = [count / sum(counts) for count in counts]
+  log_softmax = [(logit-np.max(logits)+1) - sum(counts).log() for logit in logits]
+  return probs, log_softmax
 
 #modified from karpathy's demo.ipynb
-def loss(X, y, model, batch_size):
+def loss(X, y, model, batch_size=None):
 
     if batch_size is None:  #dataloader
         Xb, yb = X, y
@@ -197,17 +200,17 @@ def loss(X, y, model, batch_size):
     for (xrow, yrow) in zip(Xb, yb):
         inputs = list(map(Value, xrow))  #Value(xrow[i])
         outputs = model(inputs)  #forward pass
-        probs = softmax(outputs)  #softmax layer
-        losses.append(-probs[yrow].log())  #negative log likelyhood loss
-        accuracy.append(yrow == np.argmax(probs)) #check if it would have guessed correctly
-    data_loss = sum(losses) / len(losses) #cost = average loss
-
+        probs, log_softmax = softmax(outputs)
+        #losses.append((-log_softmax[yrow]))  #cross entropy loss
+        losses.append(-sum([log_softmax[index] * int(index == yrow) for index in range(len(log_softmax))]))
+        accuracy.append(yrow == np.argmax(probs))
+    data_loss = sum(losses) / len(losses)
     # Janky L2 regularization 
     # (adding the normal l2 exceeded recursion depth for backward() topo sort, 
     #  so I used p.data instead. this meant that I had to multiply it into total_loss, otherwise p.grad would ignore this new l2
-    alpha = 1e-4
-    reg_loss = alpha * sum((p.data**2 for p in model.parameters())) / data_loss
-    total_loss = data_loss * (1 + reg_loss)
+    #alpha = 1e-4
+    #reg_loss = alpha * sum((p.data**2 for p in model.parameters())) / data_loss
+    total_loss = data_loss #* (1 + reg_loss)
 
     return total_loss, sum(accuracy) / len(accuracy)
 
@@ -231,25 +234,28 @@ def kaggle_training(epochs = 10, batch_size = None):
     for k in range(epochs):
         
         # forward
-        total_loss, acc = loss(X, y, model, batch_size = batch_size)
+        total_loss, acc = loss(X[:100], y[:100], model, batch_size = batch_size)
 
         # backward
         model.zero_grad()
         total_loss.backward()
         
         # update (sgd)
-        learning_rate = 0.1 - 0.0999*k/epochs
+        #learning_rate = 0.1 - 0.0999*k/epochs
+        learning_rate = 0.01
         for p in model.parameters():
+            #p.momentum = 0.1*p.grad + 0.9*p.momentum  #testing
+            #p.data -= learning_rate * p.momentum  #testing
             p.data -= learning_rate * p.grad
         
         if k % 1 == 0:
             print(f"step {k} loss {total_loss.data}, accuracy {acc*100}%")
 
     print('TRAINING COMPLETE')
-    plot_kaggle_data(X, y, model, predict = True)
-    print('BEGINNING TEST SET INFERENCE')
-    write_kaggle_submission(model)
-    print('TEST SET INFERENCE COMPLETE')
+    plot_kaggle_data(X[:100], y[:100], model, predict = True)
+    #print('BEGINNING TEST SET INFERENCE')
+    #write_kaggle_submission(model)
+    #print('TEST SET INFERENCE COMPLETE')
 
 #############################################################################################
 

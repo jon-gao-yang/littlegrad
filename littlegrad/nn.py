@@ -43,8 +43,9 @@ class Layer(Module):
 class MLP(Module):
     def __init__(self, xNum, neuronList):
         sizes = [xNum] + neuronList
-        #self.mlp = [Layer(xNum, neuronNum) for neuronNum in neuronList]
         self.mlp = [Layer(sizes[i], sizes[i+1], lin = (i == (len(neuronList)-1))) for i in range(len(neuronList))]
+        
+        self.learningRate, self.momentum = [0] * len(self.parameters()), [0] * len(self.parameters()) #learning rate optimizer attempt
 
     def __call__(self, x):
         for layer in self.mlp:

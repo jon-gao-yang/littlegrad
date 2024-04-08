@@ -9,6 +9,7 @@ class Value:
         self.grad = 0
         self._backward = lambda: None
         self._op = _op #for jupyter notebook testing (draw_dot())
+        self.momentum = 0  #gradient descent optimization attempt
 
     def data(self):
         return self.data
@@ -44,8 +45,8 @@ class Value:
 
         def _backward():
             self.grad += (other.data * (self.data ** (other.data - 1))) * out.grad
-            other.grad += (self.data ** other.data) * math.log(abs(self.data)) * out.grad #assumes base is positive (otherwise function would be complex)
-
+            other.grad += (self.data ** other.data) * math.log(max(abs(self.data), 1e-10)) * out.grad #assumes base is positive (otherwise function would be complex)
+            #TODO: fix the above line? (how does tinygrad do?)
         out._backward = _backward
         return out
         
